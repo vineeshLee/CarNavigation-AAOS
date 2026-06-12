@@ -45,6 +45,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Force the Maps SDK to use the legacy renderer to run on emulators without play-services updates
+        com.google.android.gms.maps.MapsInitializer.initialize(
+            applicationContext, 
+            com.google.android.gms.maps.MapsInitializer.Renderer.LEGACY
+        ) { renderer ->
+            android.util.Log.d("MapsInit", "Renderer version: $renderer")
+        }
+
         setContent {
             CarNavigationTheme {
                 val navController = rememberNavController()
