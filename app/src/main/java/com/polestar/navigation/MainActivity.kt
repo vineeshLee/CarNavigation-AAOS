@@ -46,10 +46,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Force the Maps SDK to use the legacy renderer to run on emulators without play-services updates
+        // Use the modern LATEST renderer for Google Maps on modern emulators
         com.google.android.gms.maps.MapsInitializer.initialize(
             applicationContext, 
-            com.google.android.gms.maps.MapsInitializer.Renderer.LEGACY
+            com.google.android.gms.maps.MapsInitializer.Renderer.LATEST
         ) { renderer ->
             android.util.Log.d("MapsInit", "Renderer version: $renderer")
         }
