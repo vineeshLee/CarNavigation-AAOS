@@ -11,19 +11,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 
 class NavigationViewModel : ViewModel() {
 
     // Speed simulation states (Showcases Driver safety)
     private val _vehicleSpeed = MutableStateFlow(0) // in km/h
     val vehicleSpeed: StateFlow<Int> = _vehicleSpeed.asStateFlow()
-
-    // Screen states
-    private val _fuelStations = MutableStateFlow<List<FuelStation>>(emptyList())
-    val fuelStations: StateFlow<List<FuelStation>> = _fuelStations.asStateFlow()
-
-    private val _restaurants = MutableStateFlow<List<Restaurant>>(emptyList())
-    val restaurants: StateFlow<List<Restaurant>> = _restaurants.asStateFlow()
 
     // Current coordinates (Stockholm Central default)
     private val _currentLocation = MutableStateFlow(LatLngState(59.33258, 18.06490))
@@ -33,39 +29,71 @@ class NavigationViewModel : ViewModel() {
     private val _destinationLocation = MutableStateFlow(LatLngState(59.33258, 18.06490))
     val destinationLocation: StateFlow<LatLngState> = _destinationLocation.asStateFlow()
 
+    // Raw static data lists
+    private val rawFuelStations = listOf(
+        FuelStation("1", "Ionity Ultra Fast", "8 min", "1.2 mi", "$0.42", "12/16 Free", isElectric = true, isBusy = false, latOffset = -0.2f, lngOffset = 0.3f),
+        FuelStation("2", "Circle K Metro", "14 min", "3.5 mi", "$4.89", "Available", isElectric = false, isBusy = false, latOffset = 0.4f, lngOffset = 0.6f),
+        FuelStation("3", "Tesla Supercharger", "18 min", "5.1 mi", "$0.58", "Busy", isElectric = true, isBusy = true, latOffset = -0.6f, lngOffset = -0.4f)
+    )
+
+    private val rawRestaurants = listOf(
+        Restaurant("1", "L'Artiste Nordic", "2.4 mi", 4.8, "$$$", "Italian", "Open until 10 PM", latOffset = -0.5f, lngOffset = 0.5f),
+        Restaurant("2", "Umami Collective", "0.8 mi", 4.9, "$$$$", "Japanese Fusion", "15 min wait", latOffset = 0.2f, lngOffset = -0.2f),
+        Restaurant("3", "Chrome Roasters", "1.2 mi", 4.5, "$$", "Cafe", "Quick Stop", latOffset = 0.5f, lngOffset = 0.1f),
+        Restaurant("4", "The Obsidian Room", "3.1 mi", 4.7, "$$$", "Modern Bistro", "Table Ready", latOffset = -0.3f, lngOffset = -0.7f),
+        Restaurant("5", "Helix Gastronomy", "5.2 mi", 5.0, "$$$$$", "Fine Dining", "Booking Required", latOffset = 0.7f, lngOffset = -0.5f),
+        Restaurant("6", "The Green Anchor", "1.5 mi", 4.6, "$$", "Vegan", "Open Now", latOffset = -0.1f, lngOffset = 0.8f)
+    )
+
+    // Dynamically combined state flow sorting by proximity to vehicle's currentLocation
+    val fuelStations: StateFlow<List<FuelStation>> = currentLocation
+        .combine(MutableStateFlow(rawFuelStations)) { location, stations ->
+            stations.map { station ->
+                val stationLat = 59.33258 + station.latOffset * 0.04
+                val stationLng = 18.06490 + station.lngOffset * 0.06
+                val distKm = calculateDistanceKm(location.latitude, location.longitude, stationLat, stationLng)
+                val distMi = distKm * 0.621371
+                val durationMin = (distKm / 50.0) * 60.0 // Assumes average speed of 50 km/h
+                station.copy(
+                    distance = String.format("%.1f mi", distMi),
+                    duration = String.format("%.0f min", durationMin)
+                )
+            }.sortedBy {
+                val stationLat = 59.33258 + it.latOffset * 0.04
+                val stationLng = 18.06490 + it.lngOffset * 0.06
+                calculateDistanceKm(location.latitude, location.longitude, stationLat, stationLng)
+            }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, rawFuelStations)
+
+    val restaurants: StateFlow<List<Restaurant>> = currentLocation
+        .combine(MutableStateFlow(rawRestaurants)) { location, rests ->
+            rests.map { rest ->
+                val restLat = 59.33258 + rest.latOffset * 0.04
+                val restLng = 18.06490 + rest.lngOffset * 0.06
+                val distKm = calculateDistanceKm(location.latitude, location.longitude, restLat, restLng)
+                val distMi = distKm * 0.621371
+                rest.copy(
+                    distance = String.format("%.1f mi", distMi)
+                )
+            }.sortedBy {
+                val restLat = 59.33258 + it.latOffset * 0.04
+                val restLng = 18.06490 + it.lngOffset * 0.06
+                calculateDistanceKm(location.latitude, location.longitude, restLat, restLng)
+            }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, rawRestaurants)
+
     // Navigation states
     private val _navHUDState = MutableStateFlow(NavigationHUDState())
     val navHUDState: StateFlow<NavigationHUDState> = _navHUDState.asStateFlow()
 
     private var navigationJob: Job? = null
 
-    init {
-        loadData()
-    }
-
-    private fun loadData() {
-        _fuelStations.value = listOf(
-            FuelStation("1", "Ionity Ultra Fast", "8 min", "1.2 mi", "$0.42", "12/16 Free", isElectric = true, isBusy = false, latOffset = -0.2f, lngOffset = 0.3f),
-            FuelStation("2", "Circle K Metro", "14 min", "3.5 mi", "$4.89", "Available", isElectric = false, isBusy = false, latOffset = 0.4f, lngOffset = 0.6f),
-            FuelStation("3", "Tesla Supercharger", "18 min", "5.1 mi", "$0.58", "Busy", isElectric = true, isBusy = true, latOffset = -0.6f, lngOffset = -0.4f)
-        )
-
-        _restaurants.value = listOf(
-            Restaurant("1", "L'Artiste Nordic", "2.4 mi", 4.8, "$$$", "Italian", "Open until 10 PM", latOffset = -0.5f, lngOffset = 0.5f),
-            Restaurant("2", "Umami Collective", "0.8 mi", 4.9, "$$$$", "Japanese Fusion", "15 min wait", latOffset = 0.2f, lngOffset = -0.2f),
-            Restaurant("3", "Chrome Roasters", "1.2 mi", 4.5, "$$", "Cafe", "Quick Stop", latOffset = 0.5f, lngOffset = 0.1f),
-            Restaurant("4", "The Obsidian Room", "3.1 mi", 4.7, "$$$", "Modern Bistro", "Table Ready", latOffset = -0.3f, lngOffset = -0.7f),
-            Restaurant("5", "Helix Gastronomy", "5.2 mi", 5.0, "$$$$$", "Fine Dining", "Booking Required", latOffset = 0.7f, lngOffset = -0.5f),
-            Restaurant("6", "The Green Anchor", "1.5 mi", 4.6, "$$", "Vegan", "Open Now", latOffset = -0.1f, lngOffset = 0.8f)
-        )
-    }
-
     fun startNavigation(destinationName: String, distance: String, duration: String) {
-        val station = _fuelStations.value.find { it.name == destinationName }
+        val station = rawFuelStations.find { it.name == destinationName }
         if (station != null) {
             _destinationLocation.value = LatLngState(59.33258 + station.latOffset * 0.04, 18.06490 + station.lngOffset * 0.06)
         } else {
-            val rest = _restaurants.value.find { it.name == destinationName }
+            val rest = rawRestaurants.find { it.name == destinationName }
             if (rest != null) {
                 _destinationLocation.value = LatLngState(59.33258 + rest.latOffset * 0.04, 18.06490 + rest.lngOffset * 0.06)
             } else if (destinationName == "Home") {
@@ -159,5 +187,16 @@ class NavigationViewModel : ViewModel() {
 
     fun setSpeed(speed: Int) {
         _vehicleSpeed.value = speed
+    }
+
+    private fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371 // Radius of earth in km
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return r * c
     }
 }
