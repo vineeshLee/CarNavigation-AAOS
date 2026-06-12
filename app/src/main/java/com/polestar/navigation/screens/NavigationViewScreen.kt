@@ -22,6 +22,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.polestar.navigation.components.MockMap
 import com.polestar.navigation.data.FuelStation
 import com.polestar.navigation.data.NavigationHUDState
@@ -48,13 +54,19 @@ fun NavigationViewScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showSafetyAlert by remember { mutableStateOf(false) }
 
+    val coroutineScope = rememberCoroutineScope()
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(59.33258, 18.06490), 14f)
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Background Map
         MockMap(
             fuelStations = fuelStations,
             restaurants = restaurants,
             navHUDState = navHUDState,
-            onPinClick = { _, _ -> }
+            onPinClick = { _, _ -> },
+            cameraPositionState = cameraPositionState
         )
 
         // 1. Turn-by-Turn Guidance Panel (Top Left)
@@ -264,7 +276,41 @@ fun NavigationViewScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            MapIconButton(icon = Icons.Default.Navigation, onClick = {})
+            MapIconButton(
+                icon = Icons.Default.Navigation,
+                onClick = {
+                    coroutineScope.launch {
+                        val centerLat = 59.33258
+                        val centerLng = 18.06490
+                        val destName = navHUDState.destinationName
+                        val station = fuelStations.find { it.name == destName }
+                        val destLatLng = if (station != null) {
+                            LatLng(centerLat + station.latOffset * 0.04, centerLng + station.lngOffset * 0.06)
+                        } else {
+                            val rest = restaurants.find { it.name == destName }
+                            if (rest != null) {
+                                            LatLng(centerLat + rest.latOffset * 0.04, centerLng + rest.lngOffset * 0.06)
+                            } else if (destName == "Home") {
+                                LatLng(centerLat + 0.02, centerLng + 0.03)
+                            } else if (destName == "Work") {
+                                LatLng(centerLat - 0.03, centerLng - 0.025)
+                            } else {
+                                LatLng(centerLat + 0.015, centerLng + 0.02)
+                            }
+                        }
+                        val userLatLng = if (navHUDState.isActive) {
+                            val p = navHUDState.progress
+                            LatLng(
+                                centerLat + p * (destLatLng.latitude - centerLat),
+                                centerLng + p * (destLatLng.longitude - centerLng)
+                            )
+                        } else {
+                            LatLng(centerLat, centerLng)
+                        }
+                        cameraPositionState.animate(CameraUpdateFactory.newLatLng(userLatLng))
+                    }
+                }
+            )
             
             // Zoom panel
             Card(
@@ -273,11 +319,25 @@ fun NavigationViewScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column {
-                    IconButton(onClick = {}, modifier = Modifier.size(56.dp)) {
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                cameraPositionState.animate(CameraUpdateFactory.zoomIn())
+                            }
+                        },
+                        modifier = Modifier.size(56.dp)
+                    ) {
                         Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = TextPrimary)
                     }
                     Divider(color = OutlineBorder, modifier = Modifier.width(56.dp).height(1.dp))
-                    IconButton(onClick = {}, modifier = Modifier.size(56.dp)) {
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                cameraPositionState.animate(CameraUpdateFactory.zoomOut())
+                            }
+                        },
+                        modifier = Modifier.size(56.dp)
+                    ) {
                         Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = TextPrimary)
                     }
                 }

@@ -1,26 +1,31 @@
 package com.polestar.navigation.components
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalContext
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MapStyleOptions
+import com.google.maps.android.compose.CameraPositionState
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberMarkerState
+import com.polestar.navigation.R
 import com.polestar.navigation.data.FuelStation
 import com.polestar.navigation.data.NavigationHUDState
 import com.polestar.navigation.data.Restaurant
-import com.polestar.navigation.theme.KineticGold
-import com.polestar.navigation.theme.Obsidian
-import com.polestar.navigation.theme.TextPrimary
-import com.polestar.navigation.theme.TextSecondary
 
 @Composable
 fun MockMap(
@@ -28,212 +33,162 @@ fun MockMap(
     restaurants: List<Restaurant>,
     navHUDState: NavigationHUDState,
     onPinClick: (String, String) -> Unit, // id, type ("fuel" or "restaurant")
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cameraPositionState: CameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(59.33258, 18.06490), 14f)
+    }
 ) {
-    // Pulse animation for user location
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseRadius by infiniteTransition.animateFloat(
-        initialValue = 10f,
-        targetValue = 25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulse"
-    )
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 0.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "pulse"
-    )
+    val context = LocalContext.current
+    val centerLat = 59.33258
+    val centerLng = 18.06490
 
-    Box(modifier = modifier.fillMaxSize().background(Obsidian)) {
-        Canvas(modifier = Modifier.fillMaxSize().clickable { /* map click stub */ }) {
-            val width = size.width
-            val height = size.height
-            val center = Offset(width / 2, height / 2)
+    // Properties with our custom Obsidian style
+    val mapProperties = remember {
+        MapProperties(
+            mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style),
+            isMyLocationEnabled = false
+        )
+    }
 
-            // 1. Draw Streets Grid (Nordic Dark Style Vector Lines)
-            val streetColor = Color(0xFF1E1E1E)
-            val streetStroke = 4f
-            
-            // Grid lines
-            for (i in -4..4) {
-                // Vertical roads
-                drawLine(
-                    color = streetColor,
-                    start = Offset(center.x + i * (width / 8f), 0f),
-                    end = Offset(center.x + i * (width / 8f) + 100f, height),
-                    strokeWidth = streetStroke
-                )
-                // Horizontal roads
-                drawLine(
-                    color = streetColor,
-                    start = Offset(0f, center.y + i * (height / 6f)),
-                    end = Offset(width, center.y + i * (height / 6f) - 50f),
-                    strokeWidth = streetStroke
-                )
-            }
+    val mapUiSettings = remember {
+        MapUiSettings(
+            zoomControlsEnabled = false,
+            myLocationButtonEnabled = false,
+            compassEnabled = false
+        )
+    }
 
-            // Diagonal ring road
-            drawCircle(
-                color = streetColor,
-                radius = width / 3.5f,
-                center = center,
-                style = Stroke(width = 6f)
-            )
-
-            // 2. Draw Navigation Route Overlay (if navigation is active)
-            if (navHUDState.isActive) {
-                // Connect center (start) to a destination point based on navigation progress
-                // Let's assume the active destination is located somewhere in the top right
-                val routeStart = center
-                val routeMid = Offset(center.x + width / 4f, center.y - height / 6f)
-                val routeEnd = Offset(center.x + width / 3f, center.y - height / 2.5f)
-
-                val path = Path().apply {
-                    moveTo(routeStart.x, routeStart.y)
-                    lineTo(routeMid.x, routeMid.y)
-                    lineTo(routeEnd.x, routeEnd.y)
-                }
-
-                // Neon route line background glow
-                drawPath(
-                    path = path,
-                    color = Color(0xFF00E5FF).copy(alpha = 0.2f),
-                    style = Stroke(width = 16f)
-                )
-
-                // Neon active route path
-                drawPath(
-                    path = path,
-                    color = Color(0xFF00E5FF),
-                    style = Stroke(width = 6f)
-                )
-
-                // Draw destination target pin
-                drawCircle(
-                    color = Color(0xFF00E5FF),
-                    radius = 12f,
-                    center = routeEnd
-                )
-                drawCircle(
-                    color = Obsidian,
-                    radius = 6f,
-                    center = routeEnd
-                )
-            }
-
-            // 3. Draw Stations Pins
-            fuelStations.forEach { station ->
-                val pinX = center.x + station.lngOffset * (width / 2.2f)
-                val pinY = center.y - station.latOffset * (height / 2.2f)
-                val pinPos = Offset(pinX, pinY)
-
-                // Draw card backdrop
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    radius = 24f,
-                    center = pinPos
-                )
-                
-                // Draw color pin representing charging or gas regular
-                val color = if (station.isElectric) KineticGold else Color(0xFF00E5FF)
-                drawCircle(
-                    color = color,
-                    radius = 16f,
-                    center = pinPos,
-                    style = Stroke(width = 4f)
-                )
-                drawCircle(
-                    color = color,
-                    radius = 8f,
-                    center = pinPos
-                )
-            }
-
-            // 4. Draw Restaurant Pins
-            restaurants.forEach { rest ->
-                val pinX = center.x + rest.lngOffset * (width / 2.2f)
-                val pinY = center.y - rest.latOffset * (height / 2.2f)
-                val pinPos = Offset(pinX, pinY)
-
-                drawCircle(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    radius = 24f,
-                    center = pinPos
-                )
-                
-                drawCircle(
-                    color = Color(0xFFFFB4AB), // Peach color for restaurants
-                    radius = 16f,
-                    center = pinPos,
-                    style = Stroke(width = 4f)
-                )
-                drawCircle(
-                    color = Color(0xFFFFB4AB),
-                    radius = 6f,
-                    center = pinPos
-                )
-            }
-
-            // 5. Draw User Location Indicator (Car Position)
-            // It sits near center. If navigation is active, it moves along the path
-            val userPos = if (navHUDState.isActive) {
-                // Interpolate along route path
-                val prog = navHUDState.progress
-                if (prog < 0.5f) {
-                    val p = prog / 0.5f
-                    Offset(
-                        center.x + (p * (width / 4f)),
-                        center.y - (p * (height / 6f))
-                    )
-                } else {
-                    val p = (prog - 0.5f) / 0.5f
-                    val midX = center.x + width / 4f
-                    val midY = center.y - height / 6f
-                    val endX = center.x + width / 3f
-                    val endY = center.y - height / 2.5f
-                    Offset(
-                        midX + (p * (endX - midX)),
-                        midY + (p * (endY - midY))
-                    )
-                }
+    // Determine target destination coordinates
+    val destLatLng = remember(navHUDState.destinationName, fuelStations, restaurants) {
+        val destName = navHUDState.destinationName
+        val station = fuelStations.find { it.name == destName }
+        if (station != null) {
+            LatLng(centerLat + station.latOffset * 0.04, centerLng + station.lngOffset * 0.06)
+        } else {
+            val rest = restaurants.find { it.name == destName }
+            if (rest != null) {
+                LatLng(centerLat + rest.latOffset * 0.04, centerLng + rest.lngOffset * 0.06)
+            } else if (destName == "Home") {
+                LatLng(centerLat + 0.02, centerLng + 0.03)
+            } else if (destName == "Work") {
+                LatLng(centerLat - 0.03, centerLng - 0.025)
             } else {
-                center
+                LatLng(centerLat + 0.015, centerLng + 0.02)
             }
+        }
+    }
 
-            // Location pulsing halo
-            drawCircle(
-                color = KineticGold.copy(alpha = pulseAlpha),
-                radius = pulseRadius,
-                center = userPos
+    // Calculate user car position
+    val userLatLng = remember(navHUDState.isActive, navHUDState.progress, destLatLng) {
+        if (navHUDState.isActive) {
+            val startLat = centerLat
+            val startLng = centerLng
+            val p = navHUDState.progress
+            LatLng(
+                startLat + p * (destLatLng.latitude - startLat),
+                startLng + p * (destLatLng.longitude - startLng)
             )
+        } else {
+            LatLng(centerLat, centerLng)
+        }
+    }
 
-            // Outer white ring
-            drawCircle(
-                color = Color.White,
-                radius = 12f,
-                center = userPos
-            )
+    // Follow the vehicle coordinate dynamically
+    LaunchedEffect(userLatLng) {
+        cameraPositionState.animate(
+            CameraUpdateFactory.newLatLng(userLatLng)
+        )
+    }
 
-            // Inner pointer triangle representing car heading
-            val arrowPath = Path().apply {
-                moveTo(userPos.x, userPos.y - 8f)
-                lineTo(userPos.x - 6f, userPos.y + 6f)
-                lineTo(userPos.x + 6f, userPos.y + 6f)
-                close()
-            }
-            rotate(degrees = if (navHUDState.isActive) 45f else 0f, pivot = userPos) {
-                drawPath(
-                    path = arrowPath,
-                    color = KineticGold
+    Box(modifier = modifier.fillMaxSize()) {
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState,
+            properties = mapProperties,
+            uiSettings = mapUiSettings
+        ) {
+            // 1. Draw Route line if active
+            if (navHUDState.isActive) {
+                Polyline(
+                    points = listOf(
+                        LatLng(centerLat, centerLng),
+                        destLatLng
+                    ),
+                    color = Color(0xFF00E5FF),
+                    width = 8f
+                )
+
+                // Active route glow effect
+                Polyline(
+                    points = listOf(
+                        LatLng(centerLat, centerLng),
+                        destLatLng
+                    ),
+                    color = Color(0xFF00E5FF).copy(alpha = 0.3f),
+                    width = 16f
+                )
+
+                // Destination marker
+                val destMarkerState = rememberMarkerState(key = "dest", position = destLatLng)
+                destMarkerState.position = destLatLng
+                Marker(
+                    state = destMarkerState,
+                    title = navHUDState.destinationName,
+                    snippet = "Destination",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
                 )
             }
+
+            // 2. Add Fuel Station Markers
+            fuelStations.forEach { station ->
+                val pos = LatLng(centerLat + station.latOffset * 0.04, centerLng + station.lngOffset * 0.06)
+                val markerState = rememberMarkerState(key = "fuel_${station.id}", position = pos)
+                markerState.position = pos
+                val markerColor = if (station.isElectric) {
+                    BitmapDescriptorFactory.HUE_YELLOW // Electric Charging Gold/Yellow
+                } else {
+                    BitmapDescriptorFactory.HUE_AZURE // Gas Station Blue
+                }
+
+                Marker(
+                    state = markerState,
+                    title = station.name,
+                    snippet = "${station.price} | ${station.availability}",
+                    icon = BitmapDescriptorFactory.defaultMarker(markerColor),
+                    onClick = {
+                        onPinClick(station.id, "fuel")
+                        false
+                    }
+                )
+            }
+
+            // 3. Add Restaurant Markers
+            restaurants.forEach { rest ->
+                val pos = LatLng(centerLat + rest.latOffset * 0.04, centerLng + rest.lngOffset * 0.06)
+                val markerState = rememberMarkerState(key = "rest_${rest.id}", position = pos)
+                markerState.position = pos
+
+                Marker(
+                    state = markerState,
+                    title = rest.name,
+                    snippet = "${rest.rating} ★ | ${rest.cuisine}",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ROSE), // Pink/Peach
+                    onClick = {
+                        onPinClick(rest.id, "restaurant")
+                        false
+                    }
+                )
+            }
+
+            // 4. Vehicle location marker
+            val carMarkerState = rememberMarkerState(key = "car", position = userLatLng)
+            carMarkerState.position = userLatLng
+            Marker(
+                state = carMarkerState,
+                title = "Your Polestar",
+                snippet = if (navHUDState.isActive) "Driving" else "Parked",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+            )
         }
     }
 }
