@@ -48,7 +48,6 @@ fun FuelFinderScreen(
                 .width(420.dp)
                 .fillMaxHeight()
                 .background(Color.Black.copy(alpha = 0.85f))
-                .border(end = 1.dp, color = OutlineBorder)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -191,6 +190,13 @@ fun FuelFinderScreen(
                 }
             }
         }
+
+        Divider(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(1.dp),
+            color = OutlineBorder
+        )
 
         // Right - Map View & Battery HUD
         Box(

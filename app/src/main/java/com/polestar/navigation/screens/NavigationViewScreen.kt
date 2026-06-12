@@ -155,7 +155,8 @@ fun NavigationViewScreen(
                     containerColor = Color.Black.copy(alpha = 0.8f),
                     unfocusedBorderColor = OutlineBorder,
                     focusedBorderColor = KineticGold,
-                    textColor = TextPrimary
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
                 ),
                 modifier = Modifier
                     .fillMaxWidth()

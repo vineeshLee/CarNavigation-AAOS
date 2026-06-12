@@ -1,6 +1,7 @@
 package com.polestar.navigation.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,8 +25,10 @@ import com.polestar.navigation.data.FuelStation
 import com.polestar.navigation.data.NavigationHUDState
 import com.polestar.navigation.data.Restaurant
 import com.polestar.navigation.data.Screen
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.polestar.navigation.theme.GraphiteCard
 import com.polestar.navigation.theme.KineticGold
+import com.polestar.navigation.theme.OnKineticGold
 import com.polestar.navigation.theme.OutlineBorder
 import com.polestar.navigation.theme.TextPrimary
 import com.polestar.navigation.theme.TextSecondary
@@ -238,7 +241,8 @@ fun DashboardScreen(
                         containerColor = Color.Black.copy(alpha = 0.8f),
                         unfocusedBorderColor = OutlineBorder,
                         focusedBorderColor = KineticGold,
-                        textColor = TextPrimary
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -254,7 +258,7 @@ fun DashboardScreen(
             }
 
             // Navigation HUD Overlay (Top Left)
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = navHUDState.isActive,
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -302,7 +306,7 @@ fun DashboardScreen(
             }
 
             // Navigation Route Info (Bottom Left)
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = navHUDState.isActive,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
