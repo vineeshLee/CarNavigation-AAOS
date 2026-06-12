@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.CarNavigation" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Set window background to dark black to match the Obsidian theme -->
+        <item name="android:windowBackground">#0A0A0A</item>
+        <item name="android:statusBarColor">#0A0A0A</item>
+        <item name="android:navigationBarColor">#0A0A0A</item>
+    </style>
+</resources>
