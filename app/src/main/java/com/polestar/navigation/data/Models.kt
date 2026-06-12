@@ -2,6 +2,8 @@ package com.polestar.navigation.data
 
 import androidx.compose.ui.graphics.vector.ImageVector
 
+data class LatLngState(val latitude: Double, val longitude: Double)
+
 data class FuelStation(
     val id: String,
     val name: String,

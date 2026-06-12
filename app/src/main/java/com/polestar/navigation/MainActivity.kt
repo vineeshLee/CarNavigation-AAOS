@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
                 val restaurants by viewModel.restaurants.collectAsState()
                 val navHUDState by viewModel.navHUDState.collectAsState()
                 val vehicleSpeed by viewModel.vehicleSpeed.collectAsState()
+                val currentLocation by viewModel.currentLocation.collectAsState()
+                val destinationLocation by viewModel.destinationLocation.collectAsState()
 
                 Row(
                     modifier = Modifier
@@ -128,7 +130,14 @@ class MainActivity : ComponentActivity() {
                                         },
                                         onStopNavigation = {
                                             viewModel.stopNavigation()
-                                        }
+                                        },
+                                        onSearch = { query ->
+                                            viewModel.searchAndNavigate(query) {
+                                                navController.navigate(Screen.NavigationView.route)
+                                            }
+                                        },
+                                        currentLocation = currentLocation,
+                                        destinationLocation = destinationLocation
                                     )
                                 }
 
@@ -168,7 +177,12 @@ class MainActivity : ComponentActivity() {
                                         },
                                         onStopNavigation = {
                                             viewModel.stopNavigation()
-                                        }
+                                        },
+                                        onSearch = { query ->
+                                            viewModel.searchAndNavigate(query) {}
+                                        },
+                                        currentLocation = currentLocation,
+                                        destinationLocation = destinationLocation
                                     )
                                 }
                             }

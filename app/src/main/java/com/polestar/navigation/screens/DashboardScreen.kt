@@ -26,6 +26,9 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.rememberCameraPositionState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import com.polestar.navigation.components.MockMap
 import com.polestar.navigation.data.FuelStation
 import com.polestar.navigation.data.NavigationHUDState
@@ -49,6 +52,9 @@ fun DashboardScreen(
     onNavigateToScreen: (Screen) -> Unit,
     onStartNavigation: (String, String, String) -> Unit,
     onStopNavigation: () -> Unit,
+    onSearch: (String) -> Unit,
+    currentLocation: com.polestar.navigation.data.LatLngState,
+    destinationLocation: com.polestar.navigation.data.LatLngState,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -226,7 +232,9 @@ fun DashboardScreen(
                 restaurants = restaurants,
                 navHUDState = navHUDState,
                 onPinClick = { _, _ -> },
-                cameraPositionState = cameraPositionState
+                cameraPositionState = cameraPositionState,
+                currentLocation = LatLng(currentLocation.latitude, currentLocation.longitude),
+                destinationLocation = LatLng(destinationLocation.latitude, destinationLocation.longitude)
             )
 
             // Search Bar Overlay (Top Right)
@@ -249,6 +257,14 @@ fun DashboardScreen(
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = TextSecondary) },
                     trailingIcon = { Icon(Icons.Default.Mic, contentDescription = "Voice", tint = TextSecondary) },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            if (searchQuery.isNotBlank()) {
+                                onSearch(searchQuery)
+                            }
+                        }
+                    ),
                     colors = TextFieldDefaults.outlinedTextFieldColors(
                         containerColor = Color.Black.copy(alpha = 0.8f),
                         unfocusedBorderColor = OutlineBorder,

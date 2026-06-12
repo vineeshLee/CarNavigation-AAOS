@@ -32,7 +32,9 @@ fun MockMap(
     modifier: Modifier = Modifier,
     cameraPositionState: CameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(LatLng(59.33258, 18.06490), 14f)
-    }
+    },
+    currentLocation: LatLng = LatLng(59.33258, 18.06490),
+    destinationLocation: LatLng = LatLng(59.33258, 18.06490)
 ) {
     val context = LocalContext.current
     val centerLat = 59.33258
@@ -54,38 +56,8 @@ fun MockMap(
     val webViewRef = remember { mutableStateOf<WebView?>(null) }
     val markersLoaded = remember { mutableStateOf(false) }
 
-    // Map targets for navigation
-    val destLatLng = remember(navHUDState.destinationName, fuelStations, restaurants) {
-        val destName = navHUDState.destinationName
-        val station = fuelStations.find { it.name == destName }
-        if (station != null) {
-            LatLng(centerLat + station.latOffset * 0.04, centerLng + station.lngOffset * 0.06)
-        } else {
-            val rest = restaurants.find { it.name == destName }
-            if (rest != null) {
-                LatLng(centerLat + rest.latOffset * 0.04, centerLng + rest.lngOffset * 0.06)
-            } else if (destName == "Home") {
-                LatLng(centerLat + 0.02, centerLng + 0.03)
-            } else if (destName == "Work") {
-                LatLng(centerLat - 0.03, centerLng - 0.025)
-            } else {
-                LatLng(centerLat + 0.015, centerLng + 0.02)
-            }
-        }
-    }
-
-    // Car coordinates
-    val userLatLng = remember(navHUDState.isActive, navHUDState.progress, destLatLng) {
-        if (navHUDState.isActive) {
-            val p = navHUDState.progress
-            LatLng(
-                centerLat + p * (destLatLng.latitude - centerLat),
-                centerLng + p * (destLatLng.longitude - centerLng)
-            )
-        } else {
-            LatLng(centerLat, centerLng)
-        }
-    }
+    val userLatLng = currentLocation
+    val destLatLng = destinationLocation
 
     // Observe local camera controllers (zoom +/- / center) and update WebView
     LaunchedEffect(cameraPositionState.position) {
@@ -93,7 +65,7 @@ fun MockMap(
         val zoom = cameraPositionState.position.zoom
         val target = cameraPositionState.position.target
         webView.evaluateJavascript(
-            "if (map) { map.setZoom($zoom); map.setCenter(new google.maps.LatLng(${target.latitude}, ${target.longitude})); }",
+            "if (map) { map.setView([${target.latitude}, ${target.longitude}], $zoom); }",
             null
         )
     }
@@ -112,7 +84,7 @@ fun MockMap(
         // Draw navigation polyline
         if (navHUDState.isActive) {
             webView.evaluateJavascript(
-                "setRoute($centerLat, $centerLng, ${destLatLng.latitude}, ${destLatLng.longitude})",
+                "setRoute(${currentLocation.latitude}, ${currentLocation.longitude}, ${destLatLng.latitude}, ${destLatLng.longitude})",
                 null
             )
         } else {

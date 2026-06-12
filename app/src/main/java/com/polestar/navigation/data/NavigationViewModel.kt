@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 class NavigationViewModel : ViewModel() {
 
@@ -22,6 +24,14 @@ class NavigationViewModel : ViewModel() {
 
     private val _restaurants = MutableStateFlow<List<Restaurant>>(emptyList())
     val restaurants: StateFlow<List<Restaurant>> = _restaurants.asStateFlow()
+
+    // Current coordinates (Stockholm Central default)
+    private val _currentLocation = MutableStateFlow(LatLngState(59.33258, 18.06490))
+    val currentLocation: StateFlow<LatLngState> = _currentLocation.asStateFlow()
+
+    // Active destination coordinates
+    private val _destinationLocation = MutableStateFlow(LatLngState(59.33258, 18.06490))
+    val destinationLocation: StateFlow<LatLngState> = _destinationLocation.asStateFlow()
 
     // Navigation states
     private val _navHUDState = MutableStateFlow(NavigationHUDState())
@@ -51,6 +61,24 @@ class NavigationViewModel : ViewModel() {
     }
 
     fun startNavigation(destinationName: String, distance: String, duration: String) {
+        val station = _fuelStations.value.find { it.name == destinationName }
+        if (station != null) {
+            _destinationLocation.value = LatLngState(59.33258 + station.latOffset * 0.04, 18.06490 + station.lngOffset * 0.06)
+        } else {
+            val rest = _restaurants.value.find { it.name == destinationName }
+            if (rest != null) {
+                _destinationLocation.value = LatLngState(59.33258 + rest.latOffset * 0.04, 18.06490 + rest.lngOffset * 0.06)
+            } else if (destinationName == "Home") {
+                _destinationLocation.value = LatLngState(59.33258 + 0.02, 18.06490 + 0.03)
+            } else if (destinationName == "Work") {
+                _destinationLocation.value = LatLngState(59.33258 - 0.03, 18.06490 - 0.025)
+            }
+        }
+
+        val startLat = 59.33258
+        val startLng = 18.06490
+        val dest = _destinationLocation.value
+
         navigationJob?.cancel()
         _navHUDState.value = NavigationHUDState(
             isActive = true,
@@ -68,11 +96,16 @@ class NavigationViewModel : ViewModel() {
             while (currentProgress < 1.0f) {
                 delay(3000)
                 currentProgress += 0.05f
+                val p = currentProgress.coerceAtMost(1.0f)
+                _currentLocation.value = LatLngState(
+                    startLat + p * (dest.latitude - startLat),
+                    startLng + p * (dest.longitude - startLng)
+                )
                 _navHUDState.update { state ->
                     state.copy(
-                        progress = currentProgress.coerceAtMost(1.0f),
-                        nextTurnDistance = if (currentProgress < 0.3f) "400 m" else if (currentProgress < 0.7f) "150 m" else "50 m",
-                        nextTurnInstruction = if (currentProgress < 0.3f) "Exit right toward E4 South" else if (currentProgress < 0.7f) "Prepare to merge onto Route 222" else "Turn right onto Stockholm Blvd"
+                        progress = p,
+                        nextTurnDistance = if (p < 0.3f) "400 m" else if (p < 0.7f) "150 m" else "50 m",
+                        nextTurnInstruction = if (p < 0.3f) "Exit right toward E4 South" else if (p < 0.7f) "Prepare to merge onto Route 222" else "Turn right onto Stockholm Blvd"
                     )
                 }
             }
@@ -81,9 +114,46 @@ class NavigationViewModel : ViewModel() {
         }
     }
 
+    fun searchAndNavigate(query: String, onSuccess: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+                val url = java.net.URL("https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=1")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("User-Agent", "CarNavigationApp/1.0")
+                
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val latIndex = response.indexOf("\"lat\":\"")
+                val lonIndex = response.indexOf("\"lon\":\"")
+                if (latIndex != -1 && lonIndex != -1) {
+                    val latStart = latIndex + 7
+                    val latEnd = response.indexOf("\"", latStart)
+                    val latStr = response.substring(latStart, latEnd)
+                    
+                    val lonStart = lonIndex + 7
+                    val lonEnd = response.indexOf("\"", lonStart)
+                    val lonStr = response.substring(lonStart, lonEnd)
+                    
+                    val lat = latStr.toDouble()
+                    val lon = lonStr.toDouble()
+                    
+                    withContext(Dispatchers.Main) {
+                        _destinationLocation.value = LatLngState(lat, lon)
+                        startNavigation(query, "15.0 km", "20 min")
+                        onSuccess()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun stopNavigation() {
         navigationJob?.cancel()
         _navHUDState.value = NavigationHUDState(isActive = false)
+        _currentLocation.value = LatLngState(59.33258, 18.06490) // reset to Stockholm default
         setSpeed(0)
     }
 
