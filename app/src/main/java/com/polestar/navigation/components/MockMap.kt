@@ -1,28 +1,24 @@
 package com.polestar.navigation.components
 
+import android.content.pm.PackageManager
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.CameraPositionState
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.rememberMarkerState
-import com.polestar.navigation.R
 import com.polestar.navigation.data.FuelStation
 import com.polestar.navigation.data.NavigationHUDState
 import com.polestar.navigation.data.Restaurant
@@ -41,122 +37,128 @@ fun MockMap(
     destinationLocation: LatLng = LatLng(59.33258, 18.06490)
 ) {
     val context = LocalContext.current
+    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+    val markersLoaded = remember { mutableStateOf(false) }
 
-    // Properties with our custom Obsidian style
-    val mapProperties = remember {
-        MapProperties(
-            mapStyleOptions = MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style),
-            isMyLocationEnabled = false
-        )
-    }
-
-    val mapUiSettings = remember {
-        MapUiSettings(
-            zoomControlsEnabled = false,
-            myLocationButtonEnabled = false,
-            compassEnabled = false
-        )
+    // Fetch Google Maps API Key securely from the Android Manifest metadata
+    val apiKey = remember {
+        try {
+            val appInfo = context.packageManager.getApplicationInfo(
+                context.packageName,
+                PackageManager.GET_META_DATA
+            )
+            appInfo.metaData.getString("com.google.android.geo.API_KEY") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     val userLatLng = currentLocation
     val destLatLng = destinationLocation
 
-    // Follow the vehicle coordinate dynamically
+    // Follow the vehicle coordinate dynamically in the camera position state
     LaunchedEffect(userLatLng) {
         cameraPositionState.animate(
             CameraUpdateFactory.newLatLng(userLatLng)
         )
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = mapProperties,
-            uiSettings = mapUiSettings
-        ) {
-            // 1. Draw Route line if active
-            if (navHUDState.isActive) {
-                Polyline(
-                    points = listOf(
-                        LatLng(59.33258, 18.06490),
-                        destLatLng
-                    ),
-                    color = Color(0xFF00E5FF),
-                    width = 8f
-                )
+    // Observe local camera controllers (zoom +/- / center) and update WebView
+    LaunchedEffect(cameraPositionState.position) {
+        val webView = webViewRef.value ?: return@LaunchedEffect
+        val zoom = cameraPositionState.position.zoom
+        val target = cameraPositionState.position.target
+        webView.evaluateJavascript(
+            "if (typeof map !== 'undefined' && map) { map.setZoom($zoom); map.setCenter(new google.maps.LatLng(${target.latitude}, ${target.longitude})); }",
+            null
+        )
+    }
 
-                // Active route glow effect
-                Polyline(
-                    points = listOf(
-                        LatLng(59.33258, 18.06490),
-                        destLatLng
-                    ),
-                    color = Color(0xFF00E5FF).copy(alpha = 0.3f),
-                    width = 16f
-                )
+    // Update vehicle position and route line dynamically on the real Google Map
+    LaunchedEffect(userLatLng, navHUDState.isActive, destLatLng, markersLoaded.value) {
+        val webView = webViewRef.value ?: return@LaunchedEffect
+        if (!markersLoaded.value) return@LaunchedEffect
 
-                // Destination marker
-                val destMarkerState = rememberMarkerState(key = "dest", position = destLatLng)
-                destMarkerState.position = destLatLng
-                Marker(
-                    state = destMarkerState,
-                    title = navHUDState.destinationName,
-                    snippet = "Destination",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
-                )
-            }
+        // Move car marker
+        webView.evaluateJavascript(
+            "if (typeof updateCarPosition === 'function') { updateCarPosition(${userLatLng.latitude}, ${userLatLng.longitude}, ${if (navHUDState.isActive) 45 else 0}); }",
+            null
+        )
 
-            // 2. Add Fuel Station Markers
-            fuelStations.forEach { station ->
-                val pos = LatLng(59.33258 + station.latOffset * 0.04, 18.06490 + station.lngOffset * 0.06)
-                val markerState = rememberMarkerState(key = "fuel_${station.id}", position = pos)
-                markerState.position = pos
-                val markerColor = if (station.isElectric) {
-                    BitmapDescriptorFactory.HUE_YELLOW // Electric Charging Gold/Yellow
-                } else {
-                    BitmapDescriptorFactory.HUE_AZURE // Gas Station Blue
-                }
+        // Draw navigation polyline
+        if (navHUDState.isActive) {
+            webView.evaluateJavascript(
+                "if (typeof setRoute === 'function') { setRoute(${userLatLng.latitude}, ${userLatLng.longitude}, ${destLatLng.latitude}, ${destLatLng.longitude}); }",
+                null
+            )
+        } else {
+            webView.evaluateJavascript("if (typeof clearRoute === 'function') { clearRoute(); }", null)
+        }
+    }
 
-                Marker(
-                    state = markerState,
-                    title = station.name,
-                    snippet = "${station.price} | ${station.availability}",
-                    icon = BitmapDescriptorFactory.defaultMarker(markerColor),
-                    onClick = {
-                        onPinClick(station.id, "fuel")
-                        false
-                    }
-                )
-            }
+    // Load custom markers once the map API is fully loaded
+    LaunchedEffect(fuelStations, restaurants, markersLoaded.value) {
+        val webView = webViewRef.value ?: return@LaunchedEffect
+        if (!markersLoaded.value) return@LaunchedEffect
 
-            // 3. Add Restaurant Markers
-            restaurants.forEach { rest ->
-                val pos = LatLng(59.33258 + rest.latOffset * 0.04, 18.06490 + rest.lngOffset * 0.06)
-                val markerState = rememberMarkerState(key = "rest_${rest.id}", position = pos)
-                markerState.position = pos
-
-                Marker(
-                    state = markerState,
-                    title = rest.name,
-                    snippet = "${rest.rating} ★ | ${rest.cuisine}",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ROSE), // Pink/Peach
-                    onClick = {
-                        onPinClick(rest.id, "restaurant")
-                        false
-                    }
-                )
-            }
-
-            // 4. Vehicle location marker
-            val carMarkerState = rememberMarkerState(key = "car", position = userLatLng)
-            carMarkerState.position = userLatLng
-            Marker(
-                state = carMarkerState,
-                title = "Your Polestar",
-                snippet = if (navHUDState.isActive) "Driving" else "Parked",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
+        fuelStations.forEach { station ->
+            val lat = 59.33258 + station.latOffset * 0.04
+            val lng = 18.06490 + station.lngOffset * 0.06
+            val type = if (station.isElectric) "electric" else "gas"
+            webView.evaluateJavascript(
+                "if (typeof addMarker === 'function') { addMarker('${station.id}', $lat, $lng, '${station.name.replace("'", "\\'")}', '${station.price} | ${station.availability}', '$type'); }",
+                null
             )
         }
+
+        restaurants.forEach { rest ->
+            val lat = 59.33258 + rest.latOffset * 0.04
+            val lng = 18.06490 + rest.lngOffset * 0.06
+            webView.evaluateJavascript(
+                "if (typeof addMarker === 'function') { addMarker('${rest.id}', $lat, $lng, '${rest.name.replace("'", "\\'")}', '${rest.rating} ★ | ${rest.cuisine}', 'restaurant'); }",
+                null
+            )
+        }
+    }
+
+    val webInterface = remember {
+        object {
+            @JavascriptInterface
+            fun getApiKey(): String = apiKey
+
+            @JavascriptInterface
+            fun onMapReady() {
+                markersLoaded.value = true
+            }
+
+            @JavascriptInterface
+            fun onMarkerClick(id: String, type: String) {
+                onPinClick(id, type)
+            }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    webViewClient = WebViewClient()
+                    settings.javaScriptEnabled = true
+                    settings.allowFileAccess = true
+                    settings.domStorageEnabled = true
+                    addJavascriptInterface(webInterface, "AndroidInterface")
+                    loadUrl("file:///android_asset/map.html")
+                    webViewRef.value = this
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { webView ->
+                webViewRef.value = webView
+            }
+        )
     }
 }

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style>
+        html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #0A0A0A;
+        }
+    </style>
+    <script>
+        let map;
+        let carMarker;
+        let routePolyline;
+        let routePolylineGlow;
+        let markers = {};
+
+        function initMap() {
+            const center = { lat: 59.33258, lng: 18.06490 };
+            
+            // Custom Obsidian Map Styles matching map_style.json exactly
+            const mapStyles = [
+                {
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#0A0A0A" }]
+                },
+                {
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#E5E2E1" }]
+                },
+                {
+                    "elementType": "labels.text.stroke",
+                    "stylers": [{ "color": "#0A0A0A" }]
+                },
+                {
+                    "featureType": "administrative",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#333333" }]
+                },
+                {
+                    "featureType": "administrative.country",
+                    "elementType": "geometry.stroke",
+                    "stylers": [{ "color": "#333333" }]
+                },
+                {
+                    "featureType": "administrative.land_parcel",
+                    "stylers": [{ "visibility": "off" }]
+                },
+                {
+                    "featureType": "administrative.locality",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#C6C9AB" }]
+                },
+                {
+                    "featureType": "poi",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#C6C9AB" }]
+                },
+                {
+                    "featureType": "poi.park",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#111111" }]
+                },
+                {
+                    "featureType": "poi.park",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#C6C9AB" }]
+                },
+                {
+                    "featureType": "road",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#1A1A1A" }]
+                },
+                {
+                    "featureType": "road",
+                    "elementType": "geometry.stroke",
+                    "stylers": [{ "color": "#333333" }]
+                },
+                {
+                    "featureType": "road",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#888888" }]
+                },
+                {
+                    "featureType": "road.highway",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#222222" }]
+                },
+                {
+                    "featureType": "road.highway",
+                    "elementType": "geometry.stroke",
+                    "stylers": [{ "color": "#333333" }]
+                },
+                {
+                    "featureType": "road.highway",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#E5E2E1" }]
+                },
+                {
+                    "featureType": "transit",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#1A1A1A" }]
+                },
+                {
+                    "featureType": "transit.station",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#C6C9AB" }]
+                },
+                {
+                    "featureType": "water",
+                    "elementType": "geometry",
+                    "stylers": [{ "color": "#070D14" }]
+                },
+                {
+                    "featureType": "water",
+                    "elementType": "labels.text.fill",
+                    "stylers": [{ "color": "#888888" }]
+                }
+            ];
+
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 14,
+                center: center,
+                styles: mapStyles,
+                disableDefaultUI: true,
+                gestureHandling: 'greedy'
+            });
+
+            // Car pointer symbol - matching green (HUE_GREEN theme)
+            carMarker = new google.maps.Marker({
+                position: center,
+                map: map,
+                title: "Your Polestar",
+                icon: {
+                    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                    scale: 6,
+                    fillColor: '#00E676', // Vibrant Green
+                    fillOpacity: 1,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 2
+                }
+            });
+
+            // Active route glow polyline (thick semi-transparent cyan background)
+            routePolylineGlow = new google.maps.Polyline({
+                path: [],
+                geodesic: true,
+                strokeColor: '#00E5FF',
+                strokeOpacity: 0.3,
+                strokeWeight: 16,
+                map: map
+            });
+
+            // Active route solid polyline (sharp cyan foreground)
+            routePolyline = new google.maps.Polyline({
+                path: [],
+                geodesic: true,
+                strokeColor: '#00E5FF',
+                strokeOpacity: 1.0,
+                strokeWeight: 8,
+                map: map
+            });
+
+            if (window.AndroidInterface) {
+                window.AndroidInterface.onMapReady();
+            }
+        }
+
+        function updateCarPosition(lat, lng, heading) {
+            const pos = new google.maps.LatLng(lat, lng);
+            carMarker.setPosition(pos);
+            map.panTo(pos);
+            
+            const icon = carMarker.getIcon();
+            if (icon) {
+                icon.rotation = heading;
+                carMarker.setIcon(icon);
+            }
+        }
+
+        function setRoute(startLat, startLng, endLat, endLng) {
+            const path = [
+                { lat: startLat, lng: startLng },
+                { lat: endLat, lng: endLng }
+            ];
+            routePolyline.setPath(path);
+            routePolylineGlow.setPath(path);
+        }
+
+        function clearRoute() {
+            routePolyline.setPath([]);
+            routePolylineGlow.setPath([]);
+        }
+
+        function addMarker(id, lat, lng, title, snippet, type) {
+            if (markers[id]) {
+                markers[id].setMap(null);
+            }
+
+            let fillColor = '#FFB4AB'; // Peach/Rose for Restaurant
+            if (type === 'electric') fillColor = '#D4F000'; // Gold
+            if (type === 'gas') fillColor = '#00E5FF'; // Cyan
+
+            const marker = new google.maps.Marker({
+                position: { lat: lat, lng: lng },
+                map: map,
+                title: title,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 8,
+                    fillColor: fillColor,
+                    fillOpacity: 1,
+                    strokeColor: '#0A0A0A',
+                    strokeWeight: 2
+                }
+            });
+
+            marker.addListener('click', () => {
+                if (window.AndroidInterface) {
+                    window.AndroidInterface.onMarkerClick(id, type);
+                }
+            });
+
+            markers[id] = marker;
+        }
+
+        function zoomIn() {
+            map.setZoom(map.getZoom() + 1);
+        }
+
+        function zoomOut() {
+            map.setZoom(map.getZoom() - 1);
+        }
+
+        function loadGoogleMapsScript() {
+            if (window.AndroidInterface && typeof window.AndroidInterface.getApiKey === 'function') {
+                const key = window.AndroidInterface.getApiKey();
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&callback=initMap`;
+                script.async = true;
+                script.defer = true;
+                document.head.appendChild(script);
+            } else {
+                // Retry in 50ms if the interface binding isn't complete yet
+                setTimeout(loadGoogleMapsScript, 50);
+            }
+        }
+        window.addEventListener('DOMContentLoaded', loadGoogleMapsScript);
+    </script>
+</head>
+<body>
+    <div id="map"></div>
+</body>
+</html>
